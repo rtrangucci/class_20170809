@@ -1,0 +1,329 @@
+---
+title: "Hierarchical normal models in Stan"
+author: ""
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align="center")
+```
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library("rstan")
+library("ggplot2")
+library("bayesplot")
+```
+
+```{r rstan-options}
+options(mc.cores = parallel::detectCores())
+```
+
+
+### Load and look at the data
+
+```{r linear-regression-data}
+load("kidiq.rda")
+head(kidiq)
+```
+
+```{r plot1}
+theme_set(bayesplot::theme_default())
+p <- ggplot(kidiq,
+            aes(
+              x = mom_iq,
+              y = kid_score
+            ))
+p1 <- p + 
+  geom_point(size = 2.5, color = "#DCBCBC") +
+  geom_smooth(method = "lm", se = FALSE, color = "#7C0000")
+
+p1
+```
+
+```{r plot2}
+p2 <- p + 
+  geom_point(size = 2.5, color = "#DCBCBC") +
+  geom_smooth(method = "lm", se = FALSE, color = "#7C0000") +
+  facet_wrap(~ mom_age)
+
+p2
+```
+Let's fit the one-way normal model that we wrote during the
+presentation. The model:
+
+$$
+y_n \sim \text{Normal}(\alpha + \theta_{j[n]}, \sigma_y) \\
+\theta_j \sim \text{Normal}(0, \sigma_\theta)
+$$
+
+### Translate Stan code to C++ and compile
+```{r mod1}
+mod1 <- stan_model("one-way-normal.stan")
+```
+
+### Fit the model with MCMC
+```{r fit1, results="hide", message=TRUE, warning=TRUE}
+y <- kidiq$kid_score
+N <- nrow(kidiq)
+idx_J <- as.integer(as.factor(kidiq$mom_age))
+J <- length(unique(idx_J))
+
+stan_dat_one_way <- list(N = N, J = J, y = y, idx_J = idx_J)
+fit1 <- sampling(mod1, data = stan_dat_one_way, seed = 770619474, iter = 2000)
+```
+```{r fit1-print}
+print(fit1, pars = c("sigma_y", "sigma_theta"))
+```
+
+### Look at the estimates
+
+```{r plot-fit1-funnel}
+post_draws <- extract(fit1, pars = c("theta","sigma_theta"), permute=F)
+dim(post_draws)
+
+color_scheme_set("brightblue")
+mcmc_scatter(post_draws, pars = c("theta[1]", "sigma_theta"),
+             transformations = list(sigma_theta = "log"))
+```
+
+```{r plot-fit1-sigma_theta}
+color_scheme_set("mix-red-blue")
+mcmc_areas(post_draws, regex_pars = 'sigma_theta')
+```
+
+This posterior is a great example of "Neal's funnel" and is a reason to 
+reparameterize the model. Let's look at the traceplot of $$\sigma_{\theta}$$
+
+```{r plot-fit1-trace-sigma-theta}
+mcmc_trace(post_draws, pars = c("sigma_theta"),
+             transformations = list(sigma_theta = "log"))
+```
+
+```{r plot-fit1-trace-sigma-theta-zoom}
+mcmc_trace(post_draws, pars = c("sigma_theta"),
+             transformations = list(sigma_theta = "log"), window = c(500,800))
+```
+
+Those areas where the traceplot is flat are bad news. Let's take a look at what
+Stan is doing when it's sampling, and it'll give us a better idea as to how
+to reparameterize the model to fix the glitch
+
+In our first model, the prior for the random intercept is coded like so:
+
+$$
+\theta_j \sim \text{Normal}(0, \sigma_\theta)
+$$
+
+In datasets where the data are weak (or, more formally, when $\sigma_y / 
+\sigma_\theta$ is large), the posterior of $\theta_j$ will be strongly dependent
+on values of $\sigma_\theta$. That can cause problems for Euclidean Hamiltonian 
+Monte Carlo samplers because we only get one stepsize for the entire posterior
+and one stepsize won't be sufficient to explore the posterior in areas where
+$\sigma_\theta$ is quite small.
+
+We'll need to use a transformation for $\theta_j$. We can use the fact
+that if $\eta_j$ is normally distributed:
+
+
+$$
+\eta_j \sim \text{Normal}(0, 1)
+$$
+
+then
+
+$$
+\alpha + \sigma_\theta \times \eta_j \sim \text{Normal}(\alpha, \sigma_\theta)
+$$
+
+We can now declare $\theta_j$ in the \texttt{transformed parameters} block and 
+make it a transformation of $\eta_j$:
+
+\begin{verbatim}
+transformed parameters {
+  vector[J] theta;
+  theta = alpha + sigma_theta * eta;
+}
+\end{verbatim}
+
+This is called the non-centered parameterization (NCP for short) for $\theta_j$,
+and it is likely that most models you code will require all random intercepts
+and coefficients to have the non-centered parameterization. There is a lot of
+noise in real data!
+
+The new model is:
+
+$$
+y_n \sim \text{Normal}(\alpha + \theta_{j[n]}, \sigma_y) \\
+\theta_j = \sigma_\theta \times \eta_j \\
+\eta_j \sim \text{Normal}(0, 1)
+$$
+
+Compile the new model:
+
+```{r mod2}
+mod2 <- stan_model("one-way-normal-ncp.stan")
+```
+
+Fit the new model:
+
+```{r fit2, results="hide", message=FALSE, warning=FALSE}
+fit2 <- sampling(mod2, data = stan_dat_one_way, seed = 770619474, iter = 2000)
+```
+
+Examine the dependence between $\sigma_\theta$ and $\eta_j$:
+
+```{r plot-fit2-funnel}
+post_draws_2 <- extract(fit2, pars = c("eta","sigma_theta"), permute=F)
+
+mcmc_scatter(post_draws_2, pars = c("eta[1]", "sigma_theta"),
+             transformations = list(sigma_theta = "log"))
+```
+
+```{r plot-fit2-sigma-2-dens}
+mcmc_areas(post_draws_2, regex_pars = 'sigma_theta')
+```
+
+```{r plot-fit1-funnel-traceplot}
+mcmc_trace(post_draws_2, pars = c("sigma_theta"),
+             transformations = list(sigma_theta = "log"))
+
+```
+
+## Hierarchical coefficients and a prior for covariance matrices
+Ok, let's add a coefficient to the model, we'll condition on
+the IQ of mother to see if this predicts the IQ of 
+the child.
+
+I'm going to center and standardize the variable momiq before I put it 
+into the model. I'm doing this for two reasons:
+
+* I want the prior on alpha to reflect my prior guess at the population average IQ
+* Keeping all the parameters in our model at roughly the same scale will speed up our
+sampling. It should reduce the warmup time which aims to learn the diagonal mass matrix.
+
+```{r X-prep}
+X <- (kidiq$mom_iq - mean(kidiq$mom_iq)) / sd(kidiq$mom_iq)
+```
+
+The new model will include the same random intercept $\theta$, but we'll add a random
+coefficient $\beta$:
+$$
+y_n \sim \text{Normal}(\alpha + \theta_{j[n]} + X_n \times \beta_{j[n]}, \sigma_y) \\
+\theta_j = \sigma_\theta \times \eta_j \\
+\beta_j = \gamma + \sigma_\beta \times \beta^{\text{std}}_j \\
+\eta_j \sim \text{Normal}(0, 1) \\
+\beta^{\text{std}}_j \sim \text{Normal}(0, 1)
+$$
+
+
+## Motivate the need for correlated random intercept and slopes
+
+```{r hier-slopes-model-comp}
+mod3 <- stan_model('one-way-normal-ncp-w-hier-slope.stan')
+```
+
+```{r hier-slopes-model-fit}
+stan_dat_hier_coef <- stan_dat_one_way
+stan_dat_hier_coef$X <- X
+fit3 <- sampling(mod3, data = stan_dat_hier_coef, iter = 2000, seed = 1301750867)
+```
+
+Examine the fit:
+
+```{r hier-slopes-model-examine}
+print(fit3, pars = c('beta', 'theta','sigma_beta','sigma_theta','gamma'))
+```
+
+Extract the draws and make a scatter of slopes vs. coefficients:
+
+```{r hier-slopes-model-plot}
+post_draws_3 <- rstan::extract(fit3, pars = c('beta','theta'))
+post_mean_beta <- colMeans(post_draws_3$beta)
+post_mean_theta <- colMeans(post_draws_3$theta)
+plot(post_mean_beta, post_mean_theta)
+print(cor(post_mean_beta, post_mean_theta))
+```
+
+The posterior tells us the random coefficients and intercepts are weakly negatively
+correlated. We should model that correlation, because the posterior correlation is
+telling us that we're not capturing the data generating process in our prior.
+
+We'll need to do a multivariate version of the NCP. Note that we could try to
+generate correlated intercepts and coefficients by directly putting a
+multivariate normal prior over them:
+
+$$
+\theta \in \mathbb{R}^2 \\
+\theta \sim \text{MultiNormal}(0, \Sigma)
+$$
+
+But this will result in more funnels and problems for EHMC, so we should go straight to the
+NCP.
+
+$$
+\Sigma = L \times L^T
+$$
+
+$$
+\eta \in \mathbb{R}^2 \\
+\eta \sim \text{MultiNormal}(0, I_2) \\
+\mu + L \times \eta \sim \text{MultiNormal}(0, \Sigma)
+$$
+
+What prior should we use for $L$? We could put a prior directly on $\Sigma$, and then
+use $\texttt{cholesky\_decompose}$, but this'll add a large overhead because we'll 
+repeatedly be running a $D^3$ algorithm for each leapfrog step. Instead, we can
+decompose $\Sigma$:
+
+$$
+\sigma \in \mathbb{R}^{2} , \Omega \in \mathbb{R}^{2\times2} \\
+\Sigma = \text{diag_matrix}(\sigma) \times \Omega \times \text{diag_matrix}(\sigma)
+$$
+
+$Omega$ is a correlation matrix. We can also decompose $\Omega$ into a
+lower-triangular and an upper triangular matrix, $\Omega = L_\Omega \times
+L_\Omega^T$, and then we can put a prior on the Cholesky factor of $\Omega$.
+Stan implements a prior over the Cholesky factor of correlation matrices called
+the LKJ prior. The density over correlation matrices has a parameter $\nu$. When
+$\nu \rightarrow \infty$ we get an identiy matrix. $\nu = 1$ yields a uniform
+prior over correlation matrices, and $0 < \nu < 1$ will favor matrices with
+extreme correlations. The off-diagonals of $\Omega$ are essentially beta random
+variables scaled to the interval $[-1, 1]$. When $\nu$ is less than one, we get
+a ``bathtub'' density between $[-1,1]$, and as $\nu$ grows larger than one we
+get a symmetric unimodal density centered on 0, increasing its concentration
+around zero with increasing $\nu$. 
+
+We'll fit this model:
+
+$$
+y_n \sim \text{Normal}(\alpha + \theta^{\text{age}}_{j[n]} + X_n \times \beta_{j[n]}, \sigma_y) \\
+\theta^{\text{age}} = \theta[,1] \\
+\beta = \gamma + \theta[,2]\\
+\theta = (\text{diag_matrix}(\sigma) \times L_\Omega \times \eta)^T \\
+\eta_{[k,j]} \sim \text{Normal}(0, 1), \, k \in \{1, 2\}, \,  j \in \{1, \dots, J\} \\ 
+L_\Omega \sim \text{lkj_corr_cholesky}(3.0)
+$$
+
+```{r hier-slopes-model-corr-comp}
+mod4 <- stan_model('one-way-normal-ncp-w-hier-slope-cor.stan')
+```
+
+```{r hier-slopes-model-corr-fit}
+fit4 <- sampling(mod4, data = stan_dat_hier_coef, iter = 2000, seed = 12345)
+```
+
+Examine fit:
+
+```{r hier-slopes-model-corr-examine}
+print(fit4, pars = c('Omega','L_Omega', 'beta', 'theta','sigma'))
+```
+
+The fit looks great. Break for coffee before we come back for hierarchical
+logistic regression.
+
+```{r hier-slopes-model-corr-sigma-plot}
+post_draws_4 <- as.matrix(fit4, pars = c('sigma'))
+
+mcmc_areas(post_draws_4)
+```

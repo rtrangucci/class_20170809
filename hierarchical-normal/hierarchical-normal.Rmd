@@ -191,7 +191,7 @@ mcmc_trace(post_draws_2, pars = c("sigma_theta"),
 ```
 
 ## Hierarchical coefficients and a prior for covariance matrices
-Ok, let's add a coefficient to the model, we'll condition on
+OK, let's add a coefficient to the model, we'll condition on
 the IQ of mother to see if this predicts the IQ of 
 the child.
 
@@ -286,7 +286,7 @@ lower-triangular and an upper triangular matrix, $\Omega = L_\Omega \times
 L_\Omega^T$, and then we can put a prior on the Cholesky factor of $\Omega$.
 Stan implements a prior over the Cholesky factor of correlation matrices called
 the LKJ prior. The density over correlation matrices has a parameter $\nu$. When
-$\nu \rightarrow \infty$ we get an identiy matrix. $\nu = 1$ yields a uniform
+$\nu \rightarrow \infty$ we get an identity matrix. $\nu = 1$ yields a uniform
 prior over correlation matrices, and $0 < \nu < 1$ will favor matrices with
 extreme correlations. The off-diagonals of $\Omega$ are essentially beta random
 variables scaled to the interval $[-1, 1]$. When $\nu$ is less than one, we get

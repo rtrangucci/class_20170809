@@ -27,6 +27,20 @@ and the following packages installed:
 * `dplyr`
 * `ggplot2`
 
+You can also just run this script to install the packages that you don't have.
+
+```
+if (!require("rstanarm")) install.packages("rstanarm")
+if (!require("bayesplot")) install.packages("bayesplot")
+```
+
+These packages will install `ggplot2` and `dplyr` if they're not
+already installed. As for installing `rstan`, Mac and Linux users
+with recent OS versions and Xcode installed (for Mac users) should
+have no problem using install.packages("rstan"). If you do run
+into problems, follow [these instructions](https://github.com/stan-dev/rstan/wiki/Installing-RStan-on-Mac-or-Linux).
+
+Windows users should follow [these instructions](https://github.com/stan-dev/rstan/wiki/Installing-RStan-on-Windows)
 ## Optional software
 
 * `devtools`
@@ -34,7 +48,6 @@ and the following packages installed:
   * This will make viewing the Rmd files much easier
 * `shinystan`
 
-[Instructions on installing rstan on Mac Linux and Windows](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started)
 
 # Class format
 

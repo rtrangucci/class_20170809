@@ -34,7 +34,7 @@ and the following packages installed:
   * This will make viewing the Rmd files much easier
 * `shinystan`
 
-[Instructions on installing rstan on Mac/Linux and Windows] (https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started)
+[Instructions on installing rstan on Mac Linux and Windows] (https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started)
 
 # Class format
 

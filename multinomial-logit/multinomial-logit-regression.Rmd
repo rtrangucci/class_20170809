@@ -1,0 +1,371 @@
+---
+title: "Hierarchical multinomial logistic regression models in Stan"
+author: ""
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align="center")
+source('../helper_funs.R')
+set.seed(123)
+```
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library("rstan")
+library("ggplot2")
+library("bayesplot")
+library("dplyr")
+library("tidyr")
+```
+
+```{r rstan-options}
+options(mc.cores = parallel::detectCores())
+```
+
+### Multinomial logit model review
+
+Say you have responses on a survey that map to one choice out
+of $K$ unordered choices. We can model the probability of
+observing choice $i$ ($\text{Pr}(Y_i = j)$ like so:
+
+$$
+\pi_{ij} = \dfrac{\exp(\eta_{ij})}{\sum_{j=1}^K \exp(\eta_{ij})}
+$$
+where $\eta_{ij}$ are the log-odds of response $ij$. Note you can add a constant
+to all of the log-odds and get the same probability out. This is what we call
+a nonidentifiability and it is bad news. We can fix one of the categories to be
+unity, and this will identify the model. Our likelihood is now
+
+$$
+\pi_{ij} = \dfrac{\exp(\eta_{ij})}{\sum_{j=1}^{K-1} \exp(\eta_{ij}) + 1}
+$$
+
+There is a strong assumption in these models, namely the independence of irrelevant
+alternatives. It means that the probability of choosing between two alternatives 
+(say, Hillary Clinton vs. Donald Trump) is not dependent on the characteristics 
+of any other alternatives.
+
+These models involve estimating $K-1$ simultaneous equations and can thus be computationally
+expensive. We'll simulate some data to get a feel for fitting these models.
+
+### Generate fake data
+
+We haven't done fake data generation and model checking
+yet, but this is an important part of modeling in Stan,
+especially when your models are complex.
+
+We'll generate from the simplest model for a dataset
+with five choices.
+
+$$
+y_n \sim \text{Categorical}(\text{softmax}(\alpha + \nu_n)) \\
+\nu_n = X_n \times \beta, \, X_n \in \mathbb{R}^D, \, \beta \in \mathbb{R}^{D \times K - 1} \\
+\beta_{d,k} \sim \text{Normal}(0, 1) \\
+\alpha_{k} \sim \text{Normal}(0, 1) 
+$$
+
+```{r multinomial-logistic-regression-data}
+N <- 3000
+K <- 3
+D <- 3
+X <- matrix(rnorm(N * D), N, D)
+beta <- cbind(matrix(rnorm((K - 1) * D), D, K - 1),0)
+alpha <- c(rnorm(K - 1), 0)
+mu <- sweep(x = X %*% beta, MARGIN = 2, STATS = alpha, FUN = '+')
+mu_soft <- t(apply(mu, 1, softmax))
+y <- sapply(1:N, function(x) rmultinom(1, size = 1, prob = mu_soft[x,]))
+y <- apply(y, 2, function(x) which(as.logical(x)))
+```
+
+```{r comp-1, warning=F}
+mod1 <- stan_model(file = 'mnl_constrained.stan')
+```
+
+### Fit our model
+
+```{r run-1}
+stan_dat <- list(y = y, N = N, D = D, X = X)
+fit1 <- sampling(mod1, data = stan_dat, iter = 1000, seed =  349596)
+```
+
+### Inspect the model: convergence, effective sample size
+
+```{r mod1-inspect}
+print(fit1)
+```
+
+### Check inferences vs. the true parameters
+
+```{r mod1-check-v-knowns}
+post_draws_beta <- as.matrix(fit1,pars = c('beta'))
+post_draws_alpha <- as.matrix(fit1,pars = c('alpha'))
+
+print(colnames(post_draws_beta))
+print(colnames(post_draws_alpha))
+
+true_beta <- c(as.vector(t(beta)))
+mcmc_recover_intervals(post_draws_beta, true_beta)
+mcmc_recover_intervals(post_draws_alpha, alpha)
+```
+
+### Hierarchical multinomial logit
+
+Let's generate some data from a hierarchical MNL model.
+
+$$
+y_n \sim \text{Categorical}(\text{softmax}(\alpha +
+\alpha^{\text{age}}_{[,\text{idx_age}[n]]} + \alpha^{\text{edu}}_{[,\text{idx_edu}[n]]} + \alpha^{\text{eth}}_{[,\text{idx_edu}[n]]} + \nu_n)) \\
+\nu_n = X_n \times \beta \\
+\alpha^{\text{age}} = \sigma^\text{age} \times \eta^\text{age},\,\,\alpha^{\text{edu}} = \sigma^\text{edu} \times \eta^\text{edu}, \,\, \alpha^{\text{eth}} = \sigma^\text{eth} \times \eta^\text{eth} \\
+\alpha^\text{age} \in \mathbb{R}^{K - 1, \text{J_age}}, \ \alpha^\text{edu} \in \mathbb{R}^{K - 1, \text{J_edu}} \dots \\
+\sigma^\text{age}, \sigma^\text{edu}, \sigma^\text{eth} \in \mathbb{R}^{K - 1} \\
+\sigma^\text{age}_k = \tau^\text{age}_k \times \sigma^{\text{age}}_\text{inter_eqn}, \, 
+\sigma^\text{edu}_k = \tau^\text{edu}_k \times \sigma^{\text{edu}}_\text{inter_eqn}, \dots \\
+\beta_{d,k} \sim \text{Normal}(0, 1) \\
+\eta \sim \text{Normal}(0, 1) \\
+\sigma^\text{age}_\text{inter_eqn}, \sigma^\text{edu}_\text{inter_eqn},
+\sigma^\text{eth}_\text{inter_eqn} \sim \text{Normal}^+(0, 1) \\
+\tau^\text{age}, \tau^\text{edu}, \tau^\text{eth} \sim  \text{Normal}^+(0, 1)
+$$
+### Generate fake data
+
+```{r hier-data-gen}
+set.seed(123)
+N <- 1000
+K <- 3
+D <- 3
+J_age <- 5
+J_eth <- 4
+J_edu <- 5
+G <- 3
+X <- matrix(rnorm(N * D), N, D)
+beta <- cbind(matrix(rnorm((K - 1) * D), D, K - 1),0)
+alpha <- c(rnorm(K - 1), 0)
+eta_age <- matrix(rnorm((K - 1) * J_age), K - 1, J_age)
+eta_eth <- matrix(rnorm((K - 1) * J_eth), K - 1, J_eth)
+eta_edu <- matrix(rnorm((K - 1) * J_edu), K - 1, J_edu)
+alpha_age <- matrix(0, K, J_age)
+alpha_eth <- matrix(0, K, J_eth)
+alpha_edu <- matrix(0, K, J_edu)
+sigma_age <- abs(rnorm(K - 1))
+sigma_eth <- abs(rnorm(K - 1))
+sigma_edu <- abs(rnorm(K - 1))
+sigma_inter_eqn <- abs(rnorm(G))
+for (k in 1:(K - 1)) {
+  alpha_age[k,] <- sigma_inter_eqn[1] * sigma_age[k] * eta_age[k,]
+  alpha_eth[k,] <- sigma_inter_eqn[2] * sigma_eth[k] * eta_eth[k,]
+  alpha_edu[k,] <- sigma_inter_eqn[3] * sigma_edu[k] * eta_edu[k,]
+}
+alpha_age[K,] <- rep(0, J_age)
+alpha_eth[K,] <- rep(0, J_eth)
+alpha_edu[K,] <- rep(0, J_edu)
+
+idx_age <- sample(J_age, N, replace = T)
+idx_eth <- sample(J_eth, N, replace = T)
+idx_edu <- sample(J_edu, N, replace = T)
+
+mu <- sweep(x = X %*% beta, MARGIN = 2, STATS = alpha, FUN = '+')
+mu <- t(t(mu) + alpha_age[, idx_age] + alpha_eth[, idx_eth] + alpha_edu[, idx_edu])
+mu_soft <- t(apply(mu, 1, softmax))
+y <- sapply(1:N, function(x) rmultinom(1, size = 1, prob = mu_soft[x,]))
+y <- apply(y, 2, function(x) which(as.logical(x)))
+```
+
+### Compile and fit the model
+
+```{r hier-comp}
+hier_mnl <- stan_model(file = 'mnl_constrained_hier.stan')
+```
+
+```{r hier-fit}
+stan_dat <- list(N = N, K = K, D = D, G = G,
+                 J_age = J_age, J_eth = J_eth, J_edu = J_edu,
+                 idx_age = idx_age, idx_eth = idx_eth, idx_edu = idx_edu,
+                 X = X)
+
+fit_hier_mnl <- sampling(hier_mnl, data = stan_dat, iter = 1000)
+```
+
+### Examine the parameters
+
+```{r hier-inspect}
+print(fit_hier_mnl, pars = c('sigma_inter_eqn','sigma_age','sigma_edu','sigma_eth'))
+```
+
+### Inspect inferences vs. true values
+
+```{r hier-inference-v-true-beta}
+post_draws_beta <- as.matrix(fit_hier_mnl, pars = c('beta'))
+
+true <- as.vector(t(beta))
+mcmc_recover_intervals(post_draws_beta, true)
+```
+
+```{r hier-inference-v-true-alpha-age}
+post_draws_age <- as.matrix(fit_hier_mnl, pars = c('alpha_age'))
+
+true <- as.vector(alpha_age)
+mcmc_recover_intervals(post_draws_age, true)
+```
+
+```{r hier-inference-v-true-sigma}
+post_draws_sigma_inter <- as.matrix(fit_hier_mnl, pars = c('sigma_inter_eqn'))
+
+mcmc_recover_intervals(post_draws_sigma_inter, sigma_inter_eqn)
+```
+
+### Binning by cell
+
+If we don't have individual predictors, we can speed up our model by 
+binning responses by cell. Here's some individual level fake data
+that is binned up to the cell level below
+
+```{r gen-bin-data}
+set.seed(123)
+N <- 30000
+K <- 6
+D <- 3
+J_age <- 5
+J_eth <- 4
+J_edu <- 5
+G <- 3
+alpha <- c(rnorm(K - 1), 0)
+eta_age <- matrix(rnorm((K - 1) * J_age), K - 1, J_age)
+eta_eth <- matrix(rnorm((K - 1) * J_eth), K - 1, J_eth)
+eta_edu <- matrix(rnorm((K - 1) * J_edu), K - 1, J_edu)
+age <- matrix(0, K, J_age)
+eth <- matrix(0, K, J_eth)
+edu <- matrix(0, K, J_edu)
+sigma_age <- abs(rnorm(K - 1))
+sigma_eth <- abs(rnorm(K - 1))
+sigma_edu <- abs(rnorm(K - 1))
+sigma_inter_eqn <- abs(rnorm(G)) 
+for (k in 1:(K - 1)) {
+  age[k,] <- sigma_inter_eqn[1] * sigma_age[k] * eta_age[k,]
+  eth[k,] <- sigma_inter_eqn[2] * sigma_eth[k] * eta_eth[k,]
+  edu[k,] <- sigma_inter_eqn[3] * sigma_edu[k] * eta_edu[k,]
+}
+age[K,] <- rep(0, J_age)
+eth[K,] <- rep(0, J_eth)
+edu[K,] <- rep(0, J_edu)
+
+idx_age <- sample(J_age, N, replace = T)
+idx_eth <- sample(J_eth, N, replace = T)
+idx_edu <- sample(J_edu, N, replace = T)
+
+
+mu <- t(age[, idx_age] + edu[, idx_edu] + eth[, idx_eth])
+mu <- sweep(x = mu, MARGIN = 2, STATS = alpha, FUN = '+')
+mu_soft <- t(apply(mu, 1, softmax))
+y <- sapply(1:N, function(x) rmultinom(1, size = 1, prob = mu_soft[x,]))
+y <- apply(y, 2, function(x) which(as.logical(x)))
+mod_df <- data.frame(y = y,
+                     idx_age = idx_age,
+                     idx_edu = idx_edu,
+                     idx_eth = idx_eth)
+mod_df %>%
+  group_by(
+    idx_age, idx_edu, idx_eth, y
+  ) %>%
+  summarise(
+    n = n()
+  ) %>%
+  group_by(
+    idx_age, idx_edu, idx_eth
+  ) %>%
+  spread(
+    key = y, value = n
+  ) %>% ungroup() %>%
+  mutate_at(
+    .cols = vars(`1`,`2`,`3`),
+    .funs = funs(if_else(is.na(.), 0L, .))
+  ) -> cleaned_dat
+
+N <- nrow(cleaned_dat)
+idx_age <- cleaned_dat %>% .$idx_age
+idx_eth <- cleaned_dat %>% .$idx_eth
+idx_edu <- cleaned_dat %>% .$idx_edu
+y <- cleaned_dat %>% select(`1`,`2`,`3`) %>% data.matrix()
+
+stan_dat <- list(N = N, K = K, G = G,
+                 J_age = J_age, J_eth = J_eth, J_edu = J_edu,
+                 idx_age = idx_age, idx_eth = idx_eth, idx_edu = idx_edu,
+                 y = y)
+```
+
+### Multinomial likelihood
+
+When we bin by cell, we can use the multinomial likelihood 
+to model the data rather than the categorical likelihood.
+
+We'll also need to use the softmax function, which is
+specialized in Stan.
+
+### 2016 Election example
+
+Let's load the data and see what it looks like:
+
+```{r election-data-load}
+polls <- readRDS('election_data.RDS')
+```
+
+Let's modify our categorical logit model to have a state random intercept 
+for state and get rid of the edu effect. We'll have 3 equations and one reference
+category, which will be Jill Stein. We won't add in \texttt{state\_pres\_vote} yet.
+
+$$
+y_n \sim \text{Multinomial}(\text{softmax}(\alpha +
+\alpha^{\text{age}}_{[,\text{idx_age}[n]]} + \alpha^{\text{state}}_{[,\text{idx_state}[n]]})) \\
+\alpha^{\text{age}} = \sigma^\text{age} \times \eta^\text{age},\,\,\alpha^{\text{state}} = \sigma^\text{state} \times \eta^\text{state} \\
+\alpha^\text{age} \in \mathbb{R}^{K - 1, \text{J_age}}, \ \alpha^\text{state} \in \mathbb{R}^{K - 1, \text{J_state}} \dots \\
+\sigma^\text{age}, \sigma^\text{state} \in \mathbb{R}^{K - 1} \\
+\sigma^\text{age}_k = \tau^\text{age}_k \times \sigma^{\text{age}}_\text{inter_eqn}, \, 
+\sigma^\text{state}_k = \tau^\text{state}_k \times \sigma^{\text{state}}_\text{inter_eqn}, \dots \\
+\beta_{d,k} \sim \text{Normal}(0, 1) \\
+\eta \sim \text{Normal}(0, 1) \\
+\sigma^\text{age}_\text{inter_eqn}, \sigma^\text{state}_\text{inter_eqn} \sim \text{Normal}^+(0, 1) \\
+\tau^\text{age}, \tau^\text{state} \sim  \text{Normal}^+(0, 1)
+$$
+
+```{r data-prep}
+polls %>% ungroup() %>%
+  mutate(
+    idx_age = fac2int(age),
+    idx_state = fac2int(state)
+  ) -> polls
+N <- nrow(polls)
+idx_age <- polls %>% .$idx_age
+idx_state <- polls %>% .$idx_state
+J_age <- n_levels(idx_age)
+J_state <- n_levels(idx_state)
+y <- polls %>% select(Clinton, Trump, Johnson, Stein) %>% data.matrix()
+K <- ncol(y)
+```
+
+```{r election-mod-comp}
+elec_mod <- stan_model('mnl_constrained_multinom_lik_election.stan')
+```
+
+```{r elec-fit}
+stan_dat <- list(N = N, K = K, G = 2,
+                 J_age = J_age, J_state = J_state,
+                 idx_age = idx_age, idx_state = idx_state,
+                 y = y)
+elec_fit <- sampling(elec_mod, data = stan_dat, iter = 2000, seed = 3454542, chains = 4, cores = 4, control = list(max_treedepth = 15))
+```
+
+### Examine the fit
+
+```{r elec-examine}
+print(elec_fit, pars = c('sigma_inter_eqn','alpha','sigma_age','sigma_state'))
+```
+
+```{r elec-areas}
+post_draws <- rstan::extract(elec_fit, pars = c('sigma_inter_eqn','alpha','sigma_age','sigma_state'), permuted = FALSE)
+
+mcmc_areas(post_draws)
+```
+
+How can we expand this model?
+

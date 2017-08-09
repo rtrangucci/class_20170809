@@ -1,0 +1,442 @@
+---
+title: "Hierarchical logistic regression models in Stan"
+author: ""
+date: ""
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align="center")
+source('../helper_funs.R')
+```
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library("rstan")
+library("ggplot2")
+library("bayesplot")
+library("dplyr")
+```
+
+```{r rstan-options}
+options(mc.cores = parallel::detectCores())
+```
+
+
+### Load and look at the data
+
+```{r logistic-regression-data}
+cps <- readRDS('cps_2016.RDS')
+pstrat <- readRDS('frame.RDS')
+```
+
+```{r cps-examine}
+head(cps)
+```
+
+```{r pstrat-examine}
+head(pstrat)
+```
+
+```{r age-plot, warning=FALSE}
+theme_set(bayesplot::theme_default())
+
+cps %>%
+  group_by(age) %>%
+  summarise(
+    logit_prop_vote = qlogis(sum(vote) / sum(N))
+  ) %>%
+  ungroup() %>%
+  mutate(age = as.integer(as.factor(age))) -> cps_plot
+
+
+p <- ggplot(cps_plot, aes(x = age, y = logit_prop_vote))
+p1 <- p + geom_point(size = 2.5, color = "#DCBCBC") +
+  geom_smooth(method = "lm", se = FALSE, color = "#7C0000")
+p1
+```
+
+Let's fit a simple model to the data:
+
+$$
+y_n \sim \text{Binomial}(K_n, p_n) \\
+\text{logit}(p_n) = \alpha + \alpha^\text{age}_{j[n]} + \alpha^\text{state}_{k[n]} \\
+\alpha^\text{age}_j = \sigma_{\text{age}} \times \eta^\text{age}_j \\
+\alpha^\text{state}_k = \sigma_{\text{state}} \times \eta^\text{state}_k \\
+\eta^\text{age}_j, \eta^\text{state}_k \sim \text{Normal}(0, 1) \\
+\sigma_\text{age}, \sigma_\text{state} \sim \text{Normal}^+(0, 1)
+$$
+with the usual NCP parameterization. We'll be using a new function called
+\texttt{binomial\_logit} that combines the binomial likelihood with a logistic
+link function.
+
+```{r extract-vars}
+cps %>%
+  group_by(age,state) %>%
+  summarise(
+    y = sum(vote),
+    K = sum(N)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = fac2int(age),
+    idx_state = fac2int(state)
+  ) -> cps_fit_1
+N <- nrow(cps_fit_1)
+y <- cps_fit_1$y
+K <- cps_fit_1$K
+idx_age <- cps_fit_1$idx_age
+idx_state <- cps_fit_1$idx_state
+J_age <- n_levels(idx_age)
+J_state <- n_levels(idx_state)
+```
+
+```{r stan-mod-1, warning=FALSE, message = FALSE}
+mod1 <- stan_model('binom_vote_state_age.stan')
+```
+
+```{r fit-mod-1}
+stan_dat <- list(N = N, y = y, K = K,
+                 J_age = J_age, J_state = J_state,
+                 idx_age = idx_age, idx_state = idx_state)
+fit1 <- sampling(mod1, data = stan_dat, iter = 1000, seed = 123)
+```
+
+Examine the fit:
+
+```{r examine-fit-1}
+print(fit1, pars = c('sigma_age','sigma_state'))
+```
+
+```{r trace-sigma-age-fit-1}
+post_draws_1 <- rstan::extract(fit1, pars = c('sigma_age','alpha'), permute = F)
+mcmc_trace(post_draws_1, pars = 'sigma_age', transformations = list(sigma_age = "log"))
+mcmc_trace(post_draws_1, pars = 'alpha')
+```
+
+## Control parameters
+
+The fit looks good, but let's try to fit the same model and change the 
+target Metropolis accpetance rate during the warmup by changing the 
+control parameter \texttt{adapt\_delta}
+
+```{r control}
+mod1_refit <- sampling(mod1, data = stan_dat, iter = 1000, seed = 123, 
+                       control = list(adapt_delta = 0.99, max_treedepth = 12))
+```
+
+```{r sampler-params-examine}
+np_orig <- nuts_params(fit1)
+lp_orig <- log_posterior(fit1)
+np_refit <- nuts_params(mod1_refit)
+lp_refit <- log_posterior(mod1_refit)
+
+mcmc_nuts_treedepth(np_orig, lp = lp_orig)
+mcmc_nuts_treedepth(np_refit, lp = lp_refit)
+
+mcmc_nuts_stepsize(np_orig, lp = lp_orig)
+mcmc_nuts_stepsize(np_refit, lp = lp_refit)
+```
+
+This will take longer, and our treedepth should increase. Why might that happen?
+
+We should keep these control parameters in mind for when our models become more complex
+in order to fit complex data, we'll often need to boost adapt_delta to force Stan
+to take smaller steps after warmup.
+
+## Poststrat addition
+
+```{r extract-pstrat-vars, warning=FALSE}
+stan_to_state <- unique(cps_fit_1[,c('state','idx_state')])
+stan_to_age <- unique(cps_fit_1[,c('age','idx_age')])
+ps_state_set <- unique(pstrat$state)
+missing_states <- setdiff(ps_state_set, stan_to_state$state)
+idx_missing <- max(stan_to_state$idx_state) + fac2int(missing_states)
+stan_to_state = bind_rows(stan_to_state,
+                          data.frame(state = missing_states,
+                                     idx_state = idx_missing))
+pstrat %>%
+  group_by(
+    age, state
+  ) %>%
+  summarise(
+    cell_elig = sum(N_elig)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = as.integer(plyr::mapvalues(age, 
+                                         from = stan_to_age$age,
+                                         to = stan_to_age$idx_age)),
+    idx_state = as.integer(plyr::mapvalues(state, 
+                                           from = stan_to_state$state,
+                                           to = stan_to_state$idx_state))
+  )-> pstrat_1
+idx_age_ps <- pstrat_1$idx_age
+idx_state_ps <- pstrat_1$idx_state
+N_ps <- nrow(pstrat_1)
+cell_elig <- pstrat_1$cell_elig
+```
+
+```{r pstrat-1-comp, warning=FALSE, message=FALSE}
+mod2 <- stan_model('binom_vote_pstrat.stan')
+```
+
+```{r pstrat-fit-1}
+stan_dat_pstrat <- stan_dat
+stan_dat_pstrat$N_ps <- N_ps
+stan_dat_pstrat$cell_elig <- cell_elig
+stan_dat_pstrat$idx_age_ps <- idx_age_ps
+stan_dat_pstrat$idx_state_ps <- idx_state_ps
+
+fit2 <- sampling(mod2, data = stan_dat_pstrat, iter = 1000, seed = 234)
+```
+
+## Add state-level predictors to handle sparse data
+
+Given that we won't have good estimates for the state effect of
+Alaska and Hawaii, we should add state-level predictors. We'll
+use the polling average by state. 
+
+Add the predictors age and state_pres_vote. The model will be:
+
+$$
+y_n \sim \text{Binomial}(K_n, p_n) \\
+\text{logit}(p_n) = \alpha + \alpha^\text{age}_{j[n]} + \alpha^\text{state}_{k[n]} +
+X_n \times \beta\\
+\alpha^\text{age}_j = \sigma_{\text{age}} \times \eta^\text{age}_j \\
+\alpha^\text{state}_k = \sigma_{\text{state}} \times \eta^\text{state}_k \\
+\alpha^\text{age}_j, \alpha^\text{state}_k \sim \text{Normal}(0, 1) \\
+\sigma_\text{age}, \sigma_\text{state} \sim \text{Normal}^+(0, 1)
+$$
+
+where $X_n$ is a row-vector from the $N$ by $D$ matrix $X$.
+
+### QR reparameterization
+
+```{r extract-vars-2}
+cps %>%
+  group_by(age,state) %>%
+  summarise(
+    y = sum(vote),
+    K = sum(N),
+    state_pres_vote = first(state_pres_vote)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = fac2int(age),
+    idx_state = fac2int(state)
+  )-> cps_fit_2
+N <- nrow(cps_fit_2)
+y <- cps_fit_2$y
+K <- cps_fit_2$K
+idx_age <- cps_fit_2$idx_age
+idx_state <- cps_fit_2$idx_state
+J_age <- n_levels(idx_age)
+J_state <- n_levels(idx_state)
+state_pres_vote <- cps_fit_2$state_pres_vote
+X <- cbind(state_pres_vote, idx_age)
+c_means <- colMeans(X)
+X_cent <- sweep(x = X, MARGIN = 2, STATS = c_means)
+QR <- qr(X_cent)
+Q <- qr.Q(QR)
+R <- qr.R(QR)
+sqrtN = sqrt(nrow(X) - 1)
+Q_scale = Q * sqrtN
+R_scale = R * 1 / sqrtN
+R_inv = solve(R_scale)
+
+pstrat %>%
+  group_by(
+    age, state
+  ) %>%
+  summarise(
+    cell_elig = sum(N_elig),
+    state_pres_vote = first(state_pres_vote)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = as.integer(plyr::mapvalues(age, 
+                                         from = stan_to_age$age,
+                                         to = stan_to_age$idx_age)),
+    idx_state = as.integer(plyr::mapvalues(state, 
+                                           from = stan_to_state$state,
+                                           to = stan_to_state$idx_state))
+  )-> pstrat_2
+idx_age_ps <- pstrat_2$idx_age
+idx_state_ps <- pstrat_2$idx_state
+N_ps <- nrow(pstrat_2)
+cell_elig <- pstrat_2$cell_elig
+state_pres_vote_ps <- pstrat_2$state_pres_vote
+age_vec <- pstrat_2$idx_age
+```
+
+What's going on with lines 157 through 162? Remember that a QR decomposition 
+will decompose any $N$ by $D$ matrix $X$ into matrices $Q$ and $R$, where $Q$ is
+an $N$ by $D$ matrix whose columns are orthogonal and $R$ is a square $D$ by $D$
+matrix. This transformation from $X$ to $Q$ is the multivariate version of 
+scaling a variable. It ensures that the posterior density for $\beta$ is 
+not affected by the correlation of the columns of $X$.
+
+How will this affect our inference for $\beta$? We can see through some algebra:
+
+$$
+X = Q \times R \\
+\text{logit}(p) = X \times \beta + \dots \\
+\text{logit}(p) = Q \times R \times \beta + \dots \\
+$$
+setting $\gamma = R \times \beta$ yields
+
+$$
+\text{logit}(p) = Q \times \gamma + \dots \\
+$$
+
+and we can get back to $\beta$ by solving for $\beta$: $\beta = R^{-1} \times \gamma$.
+
+```{r comp-mod-3, warning=FALSE, message = FALSE}
+mod3 <- stan_model('binom_vote_reg.stan')
+```
+
+```{r fit-mod-3}
+stan_dat <- list(N = N, y = y, K = K, D = dim(X)[2],
+                 J_age = J_age, J_state = J_state,
+                 idx_age = idx_age, idx_state = idx_state,
+                 Q_scale = Q_scale, R_inv = R_inv, c_means = c_means,
+                 cell_elig = cell_elig, N_ps = N_ps, idx_age_ps = idx_age_ps, idx_state_ps = idx_state_ps,
+                 age_vec_ps = age_vec, state_pres_vote_ps = state_pres_vote_ps)
+fit3 <- sampling(mod3, data = stan_dat, iter = 1000, seed = 123)
+```
+
+```{r examine-mod-3-fit}
+print(fit3,pars = c('alpha','beta','gamma','sigma_age','sigma_state'))
+```
+```{r param-plot-mod-3}
+post_draws_3 <- rstan::extract(fit3,
+                               pars = c('alpha','beta','gamma','sigma_age','sigma_state'),
+                               permute = F)
+mcmc_areas(post_draws_3, regex_pars = 'beta')
+mcmc_areas(post_draws_3, regex_pars = 'gamma')
+```
+
+Plot the predicted proportions for age vs. realized proportions:
+
+```{r age-plots}
+samps <- rstan::extract(fit3, pars = c('age_prop'))
+df <- cps_plot %>%
+  mutate(
+    mod_pred_age = qlogis(colMeans(samps$age_prop))
+  )
+df1 <- df[,c('age','logit_prop_vote')]
+df2 <- df[,c('age','mod_pred_age')]
+
+ggplot(df1, aes(x = age, y = logit_prop_vote)) +
+  geom_point() + geom_line(data = df2, aes(x = age, y = mod_pred_age))
+```
+
+Looks pretty good. Let's add \texttt{edu} as a random intercept and look at a 
+different prior for hierarchical variance parameters. These are important 
+parameters, and as you add more random intercepts and slopes, proper
+regularization for these parameters can be key to getting a good fit.
+
+## Hierarchical scale parameters
+
+Thus far we've been using half-normal priors for all of our hierarchical
+variance parameters. We could continue adding random intercepts
+conditioned on grouping factors along with the half-normal
+priors:
+
+$$
+\sigma_\text{age} \sim \text{Normal}^+(0, 1) \\
+\sigma_\text{state} \sim \text{Normal}^+(0, 1) \\
+\sigma_\text{edu} \sim \text{Normal}^+(0, 1) \\
+\sigma_\text{eth} \sim \text{Normal}^+(0, 1)
+$$
+
+However, note that the total standard deviation for the sum of the random
+intercepts is $\sqrt{4}. As we add to our model, we'll increase the variance of
+the sum of random intercepts. We know that for any dataset that we model, we'll
+have finite variance, so it seems odd to use a variance formulation that
+increases with each random intercept.
+
+Better to use a prior on the total scale for the sum of the random intercepts,
+and a prior on the proportion of variance doled out to each intercept. We can
+do this in Stan with a new constrained parameter called a \texttt{simplex},
+whose elements are all bounded between 0 and 1 summing to 1. We can use a 
+\texttt{dirichlet} density as a prior for our simplex.
+
+$$
+\pi \sim \text{Dirichlet}(\nu) \\
+\sigma_\text{global} \sim \text{exponential}(1) \\
+\vec{\sigma} = \sqrt{c \times \pi \times \sigma_\text{global}^2}
+$$
+
+The prior allows us to encode our prior beliefs about the 
+variance of the random intercepts separately from the 
+proportion of variance attributed to each component.
+
+Let's write the last model, but with the ANOVA prior.
+
+```{r comp-mod-4, warning=FALSE, message=FALSE}
+mod4 <- stan_model('binom_vote_reg_anova_prior.stan')
+```
+
+```{r extract-vars-4}
+cps %>%
+  group_by(age,state,edu) %>%
+  summarise(
+    y = sum(vote),
+    K = sum(N),
+    state_pres_vote = first(state_pres_vote)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = fac2int(age),
+    idx_state = fac2int(state),
+    idx_edu = fac2int(edu)
+  ) -> cps_fit_3
+N <- nrow(cps_fit_3)
+y <- cps_fit_3$y
+K <- cps_fit_3$K
+idx_age <- cps_fit_3$idx_age
+idx_state <- cps_fit_3$idx_state
+idx_edu <- cps_fit_3$idx_edu
+J_age <- n_levels(idx_age)
+J_state <- n_levels(idx_state)
+J_edu <- n_levels(idx_edu)
+state_pres_vote <- cps_fit_3$state_pres_vote
+X <- cbind(state_pres_vote, idx_age)
+c_means <- colMeans(X)
+X_cent <- sweep(x = X, MARGIN = 2, STATS = c_means)
+QR <- qr(X_cent)
+Q <- qr.Q(QR)
+R <- qr.R(QR)
+sqrtN = sqrt(nrow(X) - 1)
+Q_scale = Q * sqrtN
+R_scale = R * 1 / sqrtN
+R_inv = solve(R_scale)
+
+stan_to_edu <- unique(cps_fit_3[,c('edu','idx_edu')])
+pstrat %>%
+  group_by(
+    age, state, edu
+  ) %>%
+  summarise(
+    cell_elig = sum(N_elig),
+    state_pres_vote = first(state_pres_vote)
+  ) %>% ungroup() %>%
+  mutate(
+    idx_age = as.integer(plyr::mapvalues(age, 
+                                         from = stan_to_age$age,
+                                         to = stan_to_age$idx_age)),
+    idx_state = as.integer(plyr::mapvalues(state, 
+                                           from = stan_to_state$state,
+                                           to = stan_to_state$idx_state)),
+    idx_edu = as.integer(plyr::mapvalues(edu, 
+                                           from = stan_to_edu$edu,
+                                           to = stan_to_edu$idx_edu))
+  )-> pstrat_3
+idx_age_ps <- pstrat_3$idx_age
+idx_state_ps <- pstrat_3$idx_state
+N_ps <- nrow(pstrat_3)
+cell_elig <- pstrat_3$cell_elig
+state_pres_vote_ps <- pstrat_3$state_pres_vote
+age_vec <- pstrat_3$idx_age
+```
+
+We have the data ready but we won't fit it because it'll be a bit too slow to do in class.
+
+Let's move to rstanarm to see how we'd fit the same model and do some more interesting 
+poststrat.

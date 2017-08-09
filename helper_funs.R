@@ -37,3 +37,42 @@ fac2int <- function(cat_var) {
 n_levels <- function(cat_var) {
   return(length(unique(cat_var)))
 }
+
+intervals_of_interest <- function(ps, group_facs, cell_counts, ps_reps, probs) { 
+  
+  cell_N <- ps[,cell_counts] %>% data.matrix()
+  ps$cell_N <- cell_N
+  gpd_ps <- ps %>% ungroup() %>% group_by_(.dots = group_facs)
+  gp_ind <- gpd_ps %>% group_indices()
+  gpd_ps$gp_ind <- gp_ind
+  gp_sums <- summarise_(gpd_ps, tot_pop = sum(cell_N), gp_ind = first(gp_ind))
+  gp_nms <- select_(gp_sums, .dots = group_facs)
+  gp_nms <- apply(gp_nms, 1, function(x) paste(x, collapse = '_'))
+  
+  gp_sums$lo = NA_real_
+  gp_sums$med = NA_real_
+  gp_sums$hi = NA_real_
+  gp_num <- sort(unique(gp_ind))
+  gp_map <- data.frame(nm = gp_nms, 
+                       num = gp_num, stringsAsFactors = F)
+  n_gps <- nrow(gp_map)
+  ps_reps <- sweep(x = ps_reps, MARGIN = 2, STATS = ps$cell_N, FUN = '*')
+  
+  intervals_vote <- as.data.frame(matrix(NA, nrow = n_gps, ncol = 4))
+  colnames(intervals_vote) <- c("lo", "mid", "hi", "mean")
+  dists_vote <- list()
+  for (gp_i in seq_along(gp_num)) {
+    gp <- gp_map[gp_i,]
+    gp_n <- gp$num
+    gp_nm <- gp$nm
+    sel <- which(gpd_ps$gp_ind == gp_n)
+    weight_tot <- sum(ps$cell_N[sel])
+    sub_vote <- ps_reps[, sel]
+    vote_vec <- rowSums(sub_vote)/weight_tot
+    intervals_vote[gp_n,] <- round(100*c(quantile(vote_vec, probs = probs),mean(vote_vec)),1)
+    dists_vote[[gp_nm]] <- vote_vec
+  }
+  intervals_vote$group <- gp_map$nm
+  return(list(intervals_vote = intervals_vote, 
+              dists_vote = dists_vote)) 
+}

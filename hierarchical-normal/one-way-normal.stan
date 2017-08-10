@@ -18,3 +18,9 @@ model {
   alpha ~ normal(100, 20);
   theta ~ normal(0, sigma_theta); 
 }
+generated quantities {
+  vector[N] y_rep;
+  
+  for (n in 1:N)
+    y_rep[n] = normal_rng(alpha + theta[idx_J[n]], sigma_y); 
+}

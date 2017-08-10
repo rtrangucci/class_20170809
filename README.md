@@ -90,13 +90,15 @@ We'll hit the following key points in each of the sections
 ## Logistic regression, poststrat in Stan and rstanarm
 
 * Hierarchical logistic regression
-  * Priors for hierarchical variance parameters
+  * Stan control parameters (adapt-delta, max-treedepth)
   * Poststrat in the generated quantities block
   * QR decomposition for nicer posteriors
+  * Priors for hierarchical variance parameters
 
 * Hierarchical logistic regression in rstanarm
   * Easier way to code hierarchical generalized linear models
   * Poststrat using rstanarm
+  * Posterior predictive checks (PPC) in `bayesplot`
   * Structured priors for interactions
 
 ## Multinomial logistic regression
@@ -108,19 +110,22 @@ We'll hit the following key points in each of the sections
   * Tricks for speed
   * Priors for hierarchical variance parameters
   * Fit to survey data
-  * Stan control parameters (adapt-delta, max-treedepth)
 
 # Things to remember when optimizing a model
 
 * Vectorize when possible
-* Statistical efficiency and good model fit are the best
-antidotes to a slow model (reducing treedepth for each iteration
-                           will reduce the time it takes to fit a model by an
-                           order of magnitude)
+* Statistical efficiency and good model fit are the best antidotes to a slow
+model (reducing treedepth for each iteration will reduce the time it takes to
+       fit a model by an order of magnitude)
 * Use native Stan functions rather than writing your own in the Stan language
   * Most of Stan's functions have been optimized a lot (see linear regression example)
 * Can you use sampling independence to reduce the size of your dataset?
 * The only expressions that matter are those that are in the kernel of the
 posterior. Do not worry about constants!
-* Use sufficient statistics to reduce the size of the expression
-tree whenever possible
+* Use sufficient statistics to reduce the size of the expression tree whenever
+possible (examples are IID normal observations at any level linear models)
+
+# Useful links
+
+[Explanation of `state_pres_vote` data](http://www.slate.com/articles/technology/future_tense/2016/11/the_polls_of_the_future_will_be_reproducible_and_open_source.html)
+

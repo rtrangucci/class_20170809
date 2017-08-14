@@ -1,9 +1,9 @@
 ## Generate the cholesky factor of an LKJ
 ## correlation matrix
-chol_lkj <- function(d, eta){
+chol_lkj <- function(d, nu){
   shape1 <- rep(NA_real_, d - 1)
   shape2 <- rep(NA_real_, d - 1)
-  alpha <- eta + (d - 2) / 2
+  alpha <- nu + (d - 2) / 2
   shape1[1] <- alpha
   shape2[1] <- alpha
   for(i in 2:(d - 1)){
@@ -23,6 +23,13 @@ chol_lkj <- function(d, eta){
     L[m + 1, m + 1] <- sqrt(1 - r2[m])
   }
   return(L)
+}
+
+brk_finder <- function(x) {
+  x_range <- range(x)
+  n <- nclass.Sturges(x)
+  brks <- pretty(x_range, n = n, min.n = 1)
+  return(brks)
 }
 
 n_divergent <- function(fit) {
@@ -58,9 +65,8 @@ intervals_of_interest <- function(ps, group_facs, cell_counts, ps_reps, probs) {
   n_gps <- nrow(gp_map)
   ps_reps <- sweep(x = ps_reps, MARGIN = 2, STATS = ps$cell_N, FUN = '*')
   
-  intervals_vote <- as.data.frame(matrix(NA, nrow = n_gps, ncol = 4))
-  colnames(intervals_vote) <- c("lo", "mid", "hi", "mean")
-  dists_vote <- list()
+  intervals <- as.data.frame(matrix(NA, nrow = n_gps, ncol = length(probs) + 1))
+  dists <- list()
   for (gp_i in seq_along(gp_num)) {
     gp <- gp_map[gp_i,]
     gp_n <- gp$num
@@ -69,10 +75,11 @@ intervals_of_interest <- function(ps, group_facs, cell_counts, ps_reps, probs) {
     weight_tot <- sum(ps$cell_N[sel])
     sub_vote <- ps_reps[, sel]
     vote_vec <- rowSums(sub_vote)/weight_tot
-    intervals_vote[gp_n,] <- round(100*c(quantile(vote_vec, probs = probs),mean(vote_vec)),1)
-    dists_vote[[gp_nm]] <- vote_vec
+    intervals[gp_n,] <- round(c(quantile(vote_vec, probs = probs),mean(vote_vec)),3)
+    dists[[gp_nm]] <- vote_vec
   }
-  intervals_vote$group <- gp_map$nm
-  return(list(intervals_vote = intervals_vote, 
-              dists_vote = dists_vote)) 
+  colnames(intervals) <- c(paste0(round(100*probs),'%'), "mean")
+  intervals$group <- gp_map$nm
+  return(list(intervals = intervals, 
+              dists = dists)) 
 }

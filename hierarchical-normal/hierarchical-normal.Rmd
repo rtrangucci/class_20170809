@@ -13,6 +13,8 @@ knitr::opts_chunk$set(echo = TRUE, fig.align="center")
 library("rstan")
 library("ggplot2")
 library("bayesplot")
+library("gridExtra")
+source("../helper_funs.R")
 ```
 
 ```{r rstan-options}
@@ -271,6 +273,8 @@ $$
 \mu + L \times \eta \sim \text{MultiNormal}(0, \Sigma)
 $$
 
+###Priors for covariance matrices
+
 What prior should we use for $L$? We could put a prior directly on $\Sigma$, and then
 use $\texttt{cholesky\_decompose}$, but this'll add a large overhead because we'll 
 repeatedly be running a $D^3$ algorithm for each leapfrog step. Instead, we can
@@ -280,6 +284,8 @@ $$
 \sigma \in \mathbb{R}^{2} , \Omega \in \mathbb{R}^{2\times2} \\
 \Sigma = \text{diag_matrix}(\sigma) \times \Omega \times \text{diag_matrix}(\sigma)
 $$
+
+###LKJ prior
 
 $Omega$ is a correlation matrix. We can also decompose $\Omega$ into a
 lower-triangular and an upper triangular matrix, $\Omega = L_\Omega \times
@@ -294,6 +300,88 @@ a ``bathtub'' density between $[-1,1]$, and as $\nu$ grows larger than one we
 get a symmetric unimodal density centered on 0, increasing its concentration
 around zero with increasing $\nu$. 
 
+To get a better feel for the LKJ prior, we'll make some plots.
+
+```{r lkj-sim-3x3}
+set.seed(135)
+
+S <- 1e5
+dim_LKJ <- 3
+draws <- array(0, dim = c(S, 3, dim_LKJ, dim_LKJ))
+for (s in 1:S) {
+  L_Omega_1 <- chol_lkj(dim_LKJ, nu = 1.0)
+  L_Omega_2 <- chol_lkj(dim_LKJ, nu = 3.0)
+  L_Omega_3 <- chol_lkj(dim_LKJ, nu = 0.3)
+  draws[s,1,,] <- L_Omega_1 %*% t(L_Omega_1)
+  draws[s,2,,] <- L_Omega_2 %*% t(L_Omega_2)
+  draws[s,3,,] <- L_Omega_3 %*% t(L_Omega_3)
+}
+```
+
+Plots for the off-diagonal elements of each correlation matrix
+
+```{r lkj-plot-3x3}
+brk_1 <- brk_finder(draws[,1,2,3])
+brk_2 <- brk_finder(draws[,2,2,3])
+brk_3 <- brk_finder(draws[,3,2,3])
+
+p1 <- ggplot(data = data.frame(s = 1, d = draws[,1,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_1) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 1.0')))
+p2 <- ggplot(data = data.frame(s = 2, d = draws[,2,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_2) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 3.0')))
+p3 <- ggplot(data = data.frame(s = 3, d = draws[,3,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_3) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 0.3')))
+
+p_lkj <- grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+It may be unexpected that $\nu = 1$ doesn't produce a uniform distribution 
+between $[-1,1]$. This is because $\nu = 1$ produces a uniform density over 
+*correlation matrices*. This equates to matrices whose off-digonal elements are 
+slightly peaked at zero, as required to ensure positive-definiteness over the 
+matrix distribution. We can also see that $\nu = 0.3$ puts more mass on
+correlation matrices with extreme off-diagonals.
+
+```{r lkj-sim-5x5}
+set.seed(135)
+
+S <- 1e5
+dim_LKJ <- 5
+draws <- array(0, dim = c(S, 3, dim_LKJ, dim_LKJ))
+for (s in 1:S) {
+  L_Omega_1 <- chol_lkj(dim_LKJ, nu = 1.0)
+  L_Omega_2 <- chol_lkj(dim_LKJ, nu = 3.0)
+  L_Omega_3 <- chol_lkj(dim_LKJ, nu = 0.3)
+  draws[s,1,,] <- L_Omega_1 %*% t(L_Omega_1)
+  draws[s,2,,] <- L_Omega_2 %*% t(L_Omega_2)
+  draws[s,3,,] <- L_Omega_3 %*% t(L_Omega_3)
+}
+```
+
+```{r lkj-plor-5x5}
+brk_1 <- brk_finder(draws[,1,2,3])
+brk_2 <- brk_finder(draws[,2,2,3])
+brk_3 <- brk_finder(draws[,3,2,3])
+
+p1 <- ggplot(data = data.frame(s = 1, d = draws[,1,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_1) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 1.0')))
+p2 <- ggplot(data = data.frame(s = 2, d = draws[,2,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_2) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 3.0')))
+p3 <- ggplot(data = data.frame(s = 3, d = draws[,3,2,3])) +
+  geom_histogram(aes(x = d), breaks = brk_3) + xlim(c(-1,1)) + ggtitle(expression(paste(nu,' = 0.3')))
+
+p_lkj <- grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+As we move to higher dimensions, the off-diagonal distributions become more
+peaked at 0 for a fixed value of $\nu$. This makes intuitive sense for a 
+correlation prior. As we compute correlations of more random variables, in the 
+absence of any more information about the variables, it is less likely for any 
+two correlations to be truly high. This is because we'll be estimating 
+$N$ choose $2$ correlation parameters, which grows quickly as the number of 
+random variables grows. If we wanted to have 10 observations for each parameter
+in our correlation matrix and we had 50 series, we'd need 12,250 observations.
+
 We'll fit this model:
 
 $$
@@ -304,6 +392,8 @@ y_n \sim \text{Normal}(\alpha + \theta^{\text{age}}_{j[n]} + X_n \times \beta_{j
 \eta_{[k,j]} \sim \text{Normal}(0, 1), \, k \in \{1, 2\}, \,  j \in \{1, \dots, J\} \\ 
 L_\Omega \sim \text{lkj_corr_cholesky}(3.0)
 $$
+
+
 
 ```{r hier-slopes-model-corr-comp}
 mod4 <- stan_model('one-way-normal-ncp-w-hier-slope-cor.stan')

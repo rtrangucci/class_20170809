@@ -72,6 +72,13 @@ commentary in the RMarkdown docs.
  02:30 PM to 04:30 PM | Multinomial logit in Stan                        
  04:30 PM to 05:30 PM | Review and questions                              
 
+# Knitted examples
+
+* [Hierarchical models in Stan](https://rawgit.com/rtrangucci/class_20170809/master/hierarchical-normal/hierarchical-normal.html)
+* [Hierarchical logistic regression and post-stratification](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression.html)
+* [Hierarchical logistic regression and post-stratification in Rstanarm](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression-rstanarm.html)
+* [Hierarchical multinomial logit](https://rawgit.com/rtrangucci/class_20170809/master/multinomial-logit/multinomial-logit-regression.html)
+
 We'll hit the following key points in each of the sections
 
 ## Hierarchical models in stan

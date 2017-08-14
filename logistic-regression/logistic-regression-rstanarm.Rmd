@@ -36,9 +36,9 @@ y_n \sim \text{Binomial}(K_n, p_n) \\
 \text{logit}(p_n) = \alpha + \alpha^\text{age}_{j[n]} +
 \alpha^\text{state}_{k[n]} +
 X_n \times \beta\\
-\alpha^\text{age}_j = \sigma_{\alpha^\text{age}} \times \eta^\text{age}_j \\
-\alpha^\text{state}_k = \sigma_{\alpha^\text{state}} \times \eta^\text{state}_k \\
-\alpha^\text{age}_j, \alpha^\text{state}_k \sim \text{Normal}(0, 1) \\
+\alpha^\text{age}_j = \sigma_{\text{age}}\times \eta^\text{age}_j \\
+\alpha^\text{state}_k = \sigma_{\text{state}} \times \eta^\text{state}_k \\
+\eta^\text{age}_j, \eta^\text{state}_k \sim \text{Normal}(0, 1) \\
 \pi \sim \text{Dirichlet}(\nu) \\
 \sigma_\text{global} \sim \text{exponential}(1) \\
 \vec{\sigma} = \sqrt{c \times \pi \times \sigma_\text{global}^2} \\
@@ -132,7 +132,7 @@ state_intervals <-
     group_facs = 'state',
     cell_counts = 'cell_elig',
     ps_reps = ps_draws,
-    probs = c(0.1, 0.5, 0.9)
+    probs = c(0.05, 0.25, 0.5, 0.75, 0.95)
   )
     
 age_intervals <-
@@ -141,11 +141,49 @@ age_intervals <-
     group_facs = 'age',
     cell_counts = 'cell_elig',
     ps_reps = ps_draws,
-    probs = c(0.1, 0.5, 0.9)
+    probs = c(0.05, 0.25, 0.5, 0.75, 0.95)
   )
 ```
 
-### Priors for random intercept interactions
+### Poststrat interval plots
+We can plot our intervals 2 ways. The first is with the intervals that we have calculated.
+
+```{r intervals-plot-manual}
+theme_set(bayesplot::theme_default())
+n_ints <- nrow(state_intervals$intervals)
+overall_median <- median(state_intervals$intervals[,'50%'])
+state_ints <-
+  state_intervals$intervals %>%
+  arrange(
+    `95%`
+  ) %>% 
+  mutate(
+    y = seq(n_ints, 1, by = -1)
+  )
+state_names <- state_ints$group
+y <- state_ints$y
+
+p1 <- ggplot(state_ints) +
+  geom_segment(aes(x = `5%`, xend = `95%`, y = y, yend = y), colour = '#005b96') +
+  geom_segment(aes(x = `25%`, xend = `75%`, y = y, yend=y),size = 2, colour = '#03396c') +
+  geom_point(aes(x = `50%`, y = y)) +
+  scale_y_continuous(breaks = y, labels = state_names) +
+  xlab(NULL) + ylab(NULL) +
+  geom_vline(xintercept = overall_median)
+p1
+```
+
+We can also use `bayesplot` to make our interval plots
+
+```{r mcmc-intervals}
+df <- data.frame(age_intervals$dists)
+names(df) <- names(age_intervals$dists)
+
+mcmc_intervals(df, point_est = "none")
+```
+
+###Hierarchical scale priors
+
 
 One thing to keep in mind when fitting models is that
 defining the hierarchy of the scale parameters of the
@@ -225,8 +263,18 @@ $$
 \sigma_\text{global} \sim \text{Student_t}^+(\nu, 0, \text{scale}) \\
 \lambda_k^{(1)} \sim \text{Normal}^+(0, 1) \\
 \lambda_k^{(l)} = \delta^{(l)} \prod_{l_0 \in M^{(k)}} \lambda_{l_0}^{(1)} \\
-\delta^{(l)} \sim \text{Normal}^+(0, 1) \\
-\tau^{(l)}_k = \sigma_\text{global} \times \, \lambda^{(l)}_k\\
+\delta^{(l)} \sim \text{Normal}^+(0, 1)
+$$
+The priors for the random intercepts in the model above would become:
+
+$$
+\alpha^\text{age}_j = \sigma_\text{global} \times \, \lambda^{(1)}_1 \times \eta^\text{age}_j \\
+\alpha^\text{state}_j = \sigma_\text{global} \times \, \lambda^{(1)}_2 \times \eta^\text{state}_j \\
+\alpha^\text{edu}_j = \sigma_\text{global} \times \, \lambda^{(1)}_3 \times \eta^\text{edu}_j \\
+\alpha^{\text{age:state}}_j = \sigma_\text{global} \times \, \lambda^{(2)}_1 \times \eta^{\text{age:state}}_j \\
+\alpha^{\text{age:edu}}_j = \sigma_\text{global} \times \, \lambda^{(2)}_2 \times \eta^{\text{age:edu}}_j \\
+\alpha^{\text{state:age}}_j = \sigma_\text{global} \times \, \lambda^{(2)}_3 \times \eta^{\text{state:age}}_j \\
+\eta^\text{age}_j, \eta^\text{state}_j, \eta^\text{edu}_j, \eta^\text{age:state}_j, \eta^\text{age:edu}_j, \eta^\text{state:edu}_j \sim \text{Normal}(0, 1) \\
 $$
 
 If you'd like to try this prior, run the following code to install the 

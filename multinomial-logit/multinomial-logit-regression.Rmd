@@ -117,7 +117,9 @@ $$
 y_n \sim \text{Categorical}(\text{softmax}(\alpha +
 \alpha^{\text{age}}_{[,\text{idx_age}[n]]} + \alpha^{\text{edu}}_{[,\text{idx_edu}[n]]} + \alpha^{\text{eth}}_{[,\text{idx_edu}[n]]} + \nu_n)) \\
 \nu_n = X_n \times \beta \\
-\alpha^{\text{age}} = \sigma^\text{age} \times \eta^\text{age},\,\,\alpha^{\text{edu}} = \sigma^\text{edu} \times \eta^\text{edu}, \,\, \alpha^{\text{eth}} = \sigma^\text{eth} \times \eta^\text{eth} \\
+\alpha^{\text{age}}_{[k,]} = \sigma^\text{age}_{k} \times \eta^\text{age}_{[k,]},\,\,
+\alpha^{\text{edu}}_{[k,]} = \sigma^\text{edu}_{k} \times \eta^\text{edu}_{[k,]}, \,\,
+\alpha^{\text{eth}}_{[k,]} = \sigma^\text{eth}_{k} \times \eta^\text{eth}_{[k,]} \\
 \alpha^\text{age} \in \mathbb{R}^{K - 1, \text{J_age}}, \ \alpha^\text{edu} \in \mathbb{R}^{K - 1, \text{J_edu}} \dots \\
 \sigma^\text{age}, \sigma^\text{edu}, \sigma^\text{eth} \in \mathbb{R}^{K - 1} \\
 \sigma^\text{age}_k = \tau^\text{age}_k \times \sigma^{\text{age}}_\text{inter_eqn}, \, 
@@ -317,7 +319,8 @@ category, which will be Jill Stein. We won't add in \texttt{state\_pres\_vote} y
 $$
 y_n \sim \text{Multinomial}(\text{softmax}(\alpha +
 \alpha^{\text{age}}_{[,\text{idx_age}[n]]} + \alpha^{\text{state}}_{[,\text{idx_state}[n]]})) \\
-\alpha^{\text{age}} = \sigma^\text{age} \times \eta^\text{age},\,\,\alpha^{\text{state}} = \sigma^\text{state} \times \eta^\text{state} \\
+\alpha^{\text{age}}_{[k,]} = \sigma^\text{age}_{k} \times \eta^\text{age}_{[k,]},\,\,
+\alpha^{\text{state}}_{[k,]} = \sigma^\text{state}_{k} \times \eta^\text{state}_{[k,]} \\
 \alpha^\text{age} \in \mathbb{R}^{K - 1, \text{J_age}}, \ \alpha^\text{state} \in \mathbb{R}^{K - 1, \text{J_state}} \dots \\
 \sigma^\text{age}, \sigma^\text{state} \in \mathbb{R}^{K - 1} \\
 \sigma^\text{age}_k = \tau^\text{age}_k \times \sigma^{\text{age}}_\text{inter_eqn}, \, 

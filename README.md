@@ -74,6 +74,8 @@ commentary in the RMarkdown docs.
 
 # Knitted examples
 
+## Hierarchical models in stan
+
 * [Hierarchical models in Stan](https://rawgit.com/rtrangucci/class_20170809/master/hierarchical-normal/hierarchical-normal.html)
   * One-way normal model
     * How to write a Stan model
@@ -86,32 +88,23 @@ commentary in the RMarkdown docs.
     * Priors for group-varying intercepts and coefficients
     * Priors for covariance matrices
     * LKJ prior for correlation matrices
+
+## Logistic regression, poststrat in Stan
 * [Hierarchical logistic regression and post-stratification](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression.html)
-* [Hierarchical logistic regression and post-stratification in Rstanarm](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression-rstanarm.html)
-* [Hierarchical multinomial logit](https://rawgit.com/rtrangucci/class_20170809/master/multinomial-logit/multinomial-logit-regression.html)
-
-We'll hit the following key points in each of the sections
-
-## Hierarchical models in stan
-
-
-## Logistic regression, poststrat in Stan and rstanarm
-
-* Hierarchical logistic regression
   * Stan control parameters (adapt-delta, max-treedepth)
   * Poststrat in the generated quantities block
   * QR decomposition for nicer posteriors
   * Priors for hierarchical variance parameters
 
-* Hierarchical logistic regression in rstanarm
+## Logistic regression, poststrat in RStanArm
+* [Hierarchical logistic regression and post-stratification in Rstanarm](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression-rstanarm.html)
   * Easier way to code hierarchical generalized linear models
   * Poststrat using rstanarm
   * Posterior predictive checks (PPC) in `bayesplot`
   * Structured priors for interactions
 
-## Multinomial logistic regression
-
-* Hierarchical multinomial logistic regression
+## Hierarchical multinomial logistic regression
+* [Hierarchical multinomial logit](https://rawgit.com/rtrangucci/class_20170809/master/multinomial-logit/multinomial-logit-regression.html)
   * Model description
   * Fake data generation for model checking
   * Equivalent models

@@ -73,7 +73,7 @@ stan_dat_one_way <- list(N = N, J = J, y = y, idx_J = idx_J)
 fit1 <- sampling(mod1, data = stan_dat_one_way, seed = 770619474, iter = 2000)
 ```
 ```{r fit1-print}
-print(fit1, pars = c("sigma_y", "sigma_theta"))
+print(fit1, pars = c("sigma_y", "sigma_theta",'theta'))
 ```
 
 ### Look at the estimates

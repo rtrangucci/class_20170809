@@ -38,7 +38,7 @@ transformed parameters {
 }
 model {
   // priors
-  alpha ~ normal(0.7, 1);
+  alpha ~ normal(0.84, 1);
   eta_age ~ normal(0, 1);
   eta_state ~ normal(0, 1);
   
@@ -53,6 +53,7 @@ generated quantities {
   vector[50] N_state_votes = rep_vector(0, 50);
   vector[50] state_prop;
   vector[J_age] age_prop = rep_vector(0, J_age);
+  matrix[50, J_age] state_age_ps = rep_matrix(0, 50, J_age);
   for (n in 1:N) {
     real logit_mu = alpha_age[idx_age[n]] + alpha_state[idx_state[n]];
     y_rep[n] = binomial_rng(K[n], inv_logit(logit_mu));
@@ -65,6 +66,8 @@ generated quantities {
     real a_state = idx_state_n > J_state ? normal_rng(0, sigma_state) : alpha_state[idx_state_n];
     real ps_mu = inv_logit(alpha_age[idx_age_ps[n]] + a_state) * cell_elig[n];
     N_state_votes[idx_state_n] = N_state_votes[idx_state_n] + ps_mu;
+    state_age_ps[idx_state_n, idx_age_ps[n]] = state_age_ps[idx_state_n, idx_age_ps[n]]
+                                               + ps_mu;
   }
   state_prop = N_state_votes ./ state_elig;
 }

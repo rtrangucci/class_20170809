@@ -24,6 +24,7 @@ data {
 transformed data {
   vector[50] state_elig = rep_vector(0, 50);
   vector[J_age] n_age = rep_vector(0, J_age);
+  real prior_turnout = logit(0.7);
   {
     matrix[N,D] Q;
   }
@@ -35,7 +36,6 @@ transformed data {
     n_age[idx_age[n]] = n_age[idx_age[n]] + K[n];
 }
 parameters {
-  real alpha;
   vector[J_age] eta_age;
   vector[J_state] eta_state;
   real<lower=0> sigma_age;
@@ -50,11 +50,11 @@ transformed parameters {
   
   alpha_age = sigma_age * eta_age;
   alpha_state = sigma_state * eta_state;
-  alpha = 0.7 + 0.1 * alpha_raw;
+  alpha = prior_turnout + 0.2 * alpha_raw;
 }
 model {
   // priors
-  alpha_raw ~ normal(0, 1);
+  alpha_raw ~ normal(0, 1); 
   eta_age ~ normal(0, 1);
   eta_state ~ normal(0, 1);
   gamma ~ normal(0, 1);

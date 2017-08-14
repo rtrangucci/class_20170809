@@ -83,3 +83,5 @@ intervals_of_interest <- function(ps, group_facs, cell_counts, ps_reps, probs) {
   return(list(intervals = intervals, 
               dists = dists)) 
 }
+
+softmax <- function(x) {exp(x) / sum(exp(x))}

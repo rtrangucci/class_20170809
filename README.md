@@ -86,6 +86,7 @@ We'll hit the following key points in each of the sections
 * Linear regression with group-varying intercepts and coefficients
   * Priors for group-varying intercepts and coefficients
   * Priors for covariance matrices
+  * LKJ prior for correlation matrices
 
 ## Logistic regression, poststrat in Stan and rstanarm
 
@@ -127,5 +128,14 @@ possible (examples are IID normal observations at any level linear models)
 
 # Useful links
 
-[Explanation of `state_pres_vote` data](http://www.slate.com/articles/technology/future_tense/2016/11/the_polls_of_the_future_will_be_reproducible_and_open_source.html)
+* [Explanation of `state_pres_vote` data](http://www.slate.com/articles/technology/future_tense/2016/11/the_polls_of_the_future_will_be_reproducible_and_open_source.html)
+* [Stan case study about why we fit hierarchical models (uses baseball data)](pool-binary-trials/pool-no-pool.Rmd)
+  * [Knitted hmtl](pool-binary-trials/pool-no-pool.html)  
+# Literature folder table of contents
 
+* [Intuition behind different covariance priors](literature/Visualization-Covariance-Matrices.pdf)
+  * Information about ways to parameterize a covariance matrix prior and how to evaluate the properties of different priors. Lighter on math, lots of nice graphs to give a better idea as to what is happening at high dimensions.
+* [Conceptual introduction to Hamiltonian Monte Carlo](literature/Betancourt-Conceptual-introduction-to-Hamiltonian-Monte-Carlo.pdf)
+  * Wonderful intro to why HMC is successful where other samplers fail and how and when HMC fails. Also lighter on math, lots of helpful graphics.
+* [Challenges sampling from Hierarchical models](literature/Betancourt_Girolami_Hierarchical_Models.pdf)
+  * In-depth treatment of non-centered parameterization for hierarchical models. Lighter on math.

@@ -75,6 +75,17 @@ commentary in the RMarkdown docs.
 # Knitted examples
 
 * [Hierarchical models in Stan](https://rawgit.com/rtrangucci/class_20170809/master/hierarchical-normal/hierarchical-normal.html)
+  * One-way normal model
+    * How to write a Stan model
+    * What Stan does under the hood
+    * Sampler output and diagnostics
+    * What to do about divergences? (Non-centered parameterization)
+    * How to modify the target density manually for speed (only if there is time)
+
+  * Linear regression with group-varying intercepts and coefficients
+    * Priors for group-varying intercepts and coefficients
+    * Priors for covariance matrices
+    * LKJ prior for correlation matrices
 * [Hierarchical logistic regression and post-stratification](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression.html)
 * [Hierarchical logistic regression and post-stratification in Rstanarm](https://rawgit.com/rtrangucci/class_20170809/master/logistic-regression/logistic-regression-rstanarm.html)
 * [Hierarchical multinomial logit](https://rawgit.com/rtrangucci/class_20170809/master/multinomial-logit/multinomial-logit-regression.html)
@@ -83,17 +94,6 @@ We'll hit the following key points in each of the sections
 
 ## Hierarchical models in stan
 
-* One-way normal model
-  * How to write a Stan model
-  * What Stan does under the hood
-  * Sampler output and diagnostics
-  * What to do about divergences? (Non-centered parameterization)
-  * How to modify the target density manually for speed (only if there is time)
-
-* Linear regression with group-varying intercepts and coefficients
-  * Priors for group-varying intercepts and coefficients
-  * Priors for covariance matrices
-  * LKJ prior for correlation matrices
 
 ## Logistic regression, poststrat in Stan and rstanarm
 

@@ -129,8 +129,8 @@ possible (examples are IID normal observations at any level linear models)
 # Useful links
 
 * [Explanation of `state_pres_vote` data](http://www.slate.com/articles/technology/future_tense/2016/11/the_polls_of_the_future_will_be_reproducible_and_open_source.html)
-* [Stan case study about why we fit hierarchical models (uses baseball data)](pool-binary-trials/pool-no-pool.Rmd)
-  * [Knitted hmtl](pool-binary-trials/pool-no-pool.html)  
+* [Stan case study about why we fit hierarchical models (uses baseball data)](https://rawgit.com/rtrangucci/class_20170809/master/pool-binary-trials/pool-no-pool.html)
+  * [RMardown](pool-binary-trials/pool-no-pool.Rmd)  
 # Literature folder table of contents
 
 * [Intuition behind different covariance priors](literature/Visualization-Covariance-Matrices.pdf)
